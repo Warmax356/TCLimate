@@ -9,7 +9,8 @@ TCL_RELEASE_DIR="$PWD/dist/releases/v$TCL_VERSION"
 TCL_ARCHIVE="TCLimate-v$TCL_VERSION-universal.zip"
 mkdir -p "$TCL_RELEASE_DIR"
 codesign --verify --deep --strict "$TCL_APP"
-if ! codesign -d --verbose=4 "$TCL_APP" 2>&1 | grep -q '^Authority=Developer ID Application:'; then
+TCL_SIGNATURE="$(codesign -d --verbose=4 "$TCL_APP" 2>&1)"
+  if [[ "$TCL_SIGNATURE" != *"Authority=Developer ID Application:"* ]]; then
   echo "Build with ./Scripts/build-app.sh release first."
   exit 1
 fi

@@ -48,7 +48,8 @@ swift Scripts/make-icon.swift "$PWD/dist/AppIcon.iconset"
 iconutil -c icns "$PWD/dist/AppIcon.iconset" -o "$TCL_APP/Contents/Resources/AppIcon.icns"
 if [[ "$TCL_MODE" == "release" ]]; then
   codesign --force --options runtime --timestamp --sign "$TCL_SIGNER" --identifier local.umar.TCLAir "$TCL_APP"
-  if ! codesign -d --verbose=4 "$TCL_APP" 2>&1 | grep -q '^Authority=Developer ID Application:'; then
+  TCL_SIGNATURE="$(codesign -d --verbose=4 "$TCL_APP" 2>&1)"
+  if [[ "$TCL_SIGNATURE" != *"Authority=Developer ID Application:"* ]]; then
     echo "Release signing requires a Developer ID Application certificate."
     exit 1
   fi
