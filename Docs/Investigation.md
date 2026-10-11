@@ -49,6 +49,6 @@ Offline tests cover signing vectors, account URL validation, parsing, command gu
 
 ## Credential handling
 
-The optional saved email/password is stored in macOS Keychain, using the compatibility service `local.umar.TCLAir`. Sign out removes that item. Session tokens and temporary AWS credentials remain in memory. Diagnostic launch modes used during development have been removed from the distributed executable.
+The optional saved email/password is stored in macOS Keychain, using the service `io.loopbreak.TCLimate`. Sign out removes that item. Session tokens and temporary AWS credentials remain in memory. Diagnostic launch modes used during development have been removed from the distributed executable.
 
 Do not publish raw captures, authentication responses, device identifiers, or signing keys in issues or pull requests.

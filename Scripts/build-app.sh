@@ -47,14 +47,14 @@ cp THIRD_PARTY_NOTICES.md LICENSE "$TCL_APP/Contents/Resources/"
 swift Scripts/make-icon.swift "$PWD/dist/AppIcon.iconset"
 iconutil -c icns "$PWD/dist/AppIcon.iconset" -o "$TCL_APP/Contents/Resources/AppIcon.icns"
 if [[ "$TCL_MODE" == "release" ]]; then
-  codesign --force --options runtime --timestamp --sign "$TCL_SIGNER" --identifier local.umar.TCLAir "$TCL_APP"
+  codesign --force --options runtime --timestamp --sign "$TCL_SIGNER" --identifier io.loopbreak.TCLimate "$TCL_APP"
   TCL_SIGNATURE="$(codesign -d --verbose=4 "$TCL_APP" 2>&1)"
   if [[ "$TCL_SIGNATURE" != *"Authority=Developer ID Application:"* ]]; then
     echo "Release signing requires a Developer ID Application certificate."
     exit 1
   fi
 else
-  codesign --force --sign "$TCL_SIGNER" --identifier local.umar.TCLAir "$TCL_APP"
+  codesign --force --sign "$TCL_SIGNER" --identifier io.loopbreak.TCLimate "$TCL_APP"
 fi
 codesign --verify --deep --strict "$TCL_APP"
 echo "Built $TCL_APP"

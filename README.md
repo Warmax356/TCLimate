@@ -124,7 +124,7 @@ swift test
 
 GitHub Actions runs the offline tests on macOS. Packaging is local only, because it needs your signing certificate. For universal Developer ID builds and notarization, see [Docs/Releasing.md](Docs/Releasing.md). Protocol and validation notes are in [Docs/Investigation.md](Docs/Investigation.md).
 
-The app keeps the `local.umar.TCLAir` bundle identifier and Keychain service from earlier TCL Air builds, so saved sign-ins carry over. Keep only one installed copy when configuring Login Items.
+Keep only one installed copy when configuring Login Items.
 
 Contributions are welcome, especially compatibility reports for other models and regions, accessibility improvements and installation polish. Include your macOS version, AC model, region and the sanitized error message.
 
