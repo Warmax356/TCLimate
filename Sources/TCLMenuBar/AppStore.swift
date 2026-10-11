@@ -13,7 +13,8 @@ final class AppStore: ObservableObject {
     @Published var busy = false
     @Published var pendingDevices: Set<String> = []
     @Published var error: String?
-    @Published var notice: String?
+    /// Devices whose last command was sent but not yet reflected in reported state.
+    @Published var unconfirmedDevices: Set<String> = []
     @Published var lastUpdated: Date?
     @Published var connectStep: ConnectStep?
     @Published var email = ""
@@ -44,7 +45,7 @@ final class AppStore: ObservableObject {
     private func connect(login: SavedLogin, save: Bool) async {
         busy = true
         error = nil
-        notice = nil
+        unconfirmedDevices = []
         let current = generation
         let candidate = CloudClient()
         connectStep = .signingIn
@@ -86,7 +87,7 @@ final class AppStore: ObservableObject {
             devices = found
             lastUpdated = Date()
             error = nil
-            notice = nil
+            unconfirmedDevices = []
         } catch { if current == generation { self.error = error.localizedDescription } }
         if current == generation { busy = false }
     }
@@ -95,13 +96,12 @@ final class AppStore: ObservableObject {
         guard connected, !busy, !pendingDevices.contains(device.id), device.isOnline, device.isSupported else { return }
         pendingDevices.insert(device.id)
         error = nil
-        notice = nil
+        unconfirmedDevices.remove(device.id)
         let current = generation
         let activeClient = client
         do {
             try await activeClient.control(device: device, command: command)
             guard current == generation else { return }
-            notice = "Command sent. Waiting for the AC to report its state."
             try await Task.sleep(for: .seconds(2))
             let found = try await activeClient.devices()
             guard current == generation else { return }
@@ -109,7 +109,7 @@ final class AppStore: ObservableObject {
             lastUpdated = Date()
             let reported = found.first { $0.id == device.id }
             let confirmed = reported?.confirms(command) == true
-            notice = confirmed ? "\(device.name) confirmed the change." : "Command sent. The AC has not confirmed the change yet; refresh to check."
+            if confirmed { unconfirmedDevices.remove(device.id) } else { unconfirmedDevices.insert(device.id) }
         } catch { if current == generation { self.error = error.localizedDescription } }
         if current == generation { pendingDevices.remove(device.id) }
     }
@@ -142,7 +142,7 @@ final class AppStore: ObservableObject {
         pendingEnergy = []
         password = ""
         lastUpdated = nil
-        notice = nil
+        unconfirmedDevices = []
         error = nil
     }
 }

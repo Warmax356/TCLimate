@@ -7,11 +7,13 @@ struct AirPanel: View {
     @ObservedObject var store: AppStore
     @StateObject private var launchAtLogin = LaunchAtLogin()
     @State private var contentHeight: CGFloat?
+    @State private var headerHeight: CGFloat?
+    @AppStorage("selectedDeviceID") private var selectedDeviceID = ""
     private let poll = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            header.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { headerHeight = $0 }
             // An explicit height lets MenuBarExtra size its window; scrolls past the cap.
             ScrollView {
                 content.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { contentHeight = $0 }
@@ -19,9 +21,10 @@ struct AirPanel: View {
             .scrollBounceBehavior(.basedOnSize)
             .frame(height: contentHeight.map { min($0, 540) })
         }
-        .frame(width: 340)
+        .frame(width: 380)
+        .frame(maxHeight: .infinity, alignment: .top)
         .tint(.gray)
-        .background(WindowTopAnchor())
+        .background(WindowTopAnchor(height: panelHeight))
         .onAppear { launchAtLogin.refresh() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             launchAtLogin.refresh()
@@ -29,6 +32,11 @@ struct AirPanel: View {
         .onReceive(poll) { _ in
             if NSApplication.shared.keyWindow?.isVisible == true { Task { await store.refresh() } }
         }
+    }
+
+    private var panelHeight: CGFloat? {
+        guard let headerHeight, let contentHeight else { return nil }
+        return headerHeight + min(contentHeight, 540)
     }
 
     private var content: some View {
@@ -43,7 +51,9 @@ struct AirPanel: View {
         HStack(spacing: 4) {
             VStack(alignment: .leading, spacing: 1) {
                 Text("TCLimate").font(.system(size: 13, weight: .semibold))
-                Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                if store.connectStep == nil {
+                    Text(subtitle).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                }
             }
             Spacer()
             if store.connected {
@@ -100,8 +110,6 @@ struct AirPanel: View {
         }
         if let error = store.error {
             Banner(text: error, symbol: "exclamationmark.triangle.fill", tint: .red)
-        } else if let notice = store.notice {
-            Banner(text: notice, symbol: store.pendingDevices.isEmpty ? "checkmark.circle.fill" : "clock", tint: .secondary)
         }
     }
 
@@ -114,10 +122,13 @@ struct AirPanel: View {
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }.frame(maxWidth: .infinity).padding(.vertical, 24)
         }
-        ForEach(store.devices) { device in
-            DeviceCard(energyStore: store, device: device, pending: store.pendingDevices.contains(device.id), busy: store.busy) { command in
+        if store.devices.count > 1 { DeviceSwitcher(devices: store.devices, selection: $selectedDeviceID) }
+        if let device = store.devices.first(where: { $0.id == selectedDeviceID }) ?? store.devices.first {
+            DeviceCard(energyStore: store, device: device, pending: store.pendingDevices.contains(device.id),
+                       unconfirmed: store.unconfirmedDevices.contains(device.id), busy: store.busy) { command in
                 Task { await store.send(command, to: device) }
             }
+            .id(device.id)
         }
     }
 }
@@ -193,7 +204,7 @@ private struct SignInForm: View {
     private var form: some View {
         VStack(spacing: 14) {
             VStack(spacing: 8) {
-                ACGlyph(active: true, width: 48)
+                BrandMark(size: 52)
                 Text("Sign in to TCL Home").font(.title3.weight(.semibold))
                 Text("Use the account your air conditioners are paired with.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -275,56 +286,60 @@ private struct ConnectingView: View {
     @State private var spinning = false
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             ZStack {
-                Circle().stroke(.primary.opacity(0.1), lineWidth: 3)
-                Circle().trim(from: 0, to: 0.28)
-                    .stroke(.primary, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                Circle().stroke(.primary.opacity(0.08), lineWidth: 1.5)
+                Circle().trim(from: 0, to: 0.22)
+                    .stroke(.primary.opacity(0.8), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                     .rotationEffect(.degrees(spinning ? 360 : 0))
-                Image(nsImage: MenuBarIcon.snowflake(size: 28, lineWidth: 1.6)).renderingMode(.template)
+                Image(nsImage: MenuBarIcon.snowflake(size: 24, lineWidth: 1.5)).renderingMode(.template)
                     .foregroundStyle(.primary)
             }
-            .frame(width: 64, height: 64)
-            .onAppear { withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) { spinning = true } }
+            .frame(width: 56, height: 56)
+            .onAppear { withAnimation(.linear(duration: 1.1).repeatForever(autoreverses: false)) { spinning = true } }
             .accessibilityHidden(true)
 
             VStack(spacing: 3) {
-                Text("Connecting to TCL Home").font(.title3.weight(.semibold))
+                Text("Connecting to TCL Home").font(.system(size: 15, weight: .semibold))
                 if !email.isEmpty { Text(email).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
             }
 
-            VStack(alignment: .leading, spacing: 10) {
-                stepRow(.signingIn, "Signing in to your account", symbol: "person.badge.key")
-                stepRow(.findingDevices, "Finding your air conditioners", symbol: nil)
+            VStack(alignment: .leading, spacing: 0) {
+                stepRow(.signingIn, "Signing in to your account")
+                Divider().padding(.leading, 30)
+                stepRow(.findingDevices, "Finding your air conditioners")
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.primary.opacity(0.08)))
+            .padding(.horizontal, 12)
+            .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
 
-            Button("Cancel", action: cancel).controlSize(.large).keyboardShortcut(.cancelAction)
+            Button("Cancel", action: cancel)
+                .buttonStyle(.plain).font(.callout).foregroundStyle(.secondary)
+                .keyboardShortcut(.cancelAction)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
         .animation(.snappy, value: step)
     }
 
-    private func stepRow(_ row: ConnectStep, _ title: String, symbol: String?) -> some View {
-        HStack(spacing: 10) {
+    private func stepRow(_ row: ConnectStep, _ title: String) -> some View {
+        let done = row.rawValue < step.rawValue, current = row == step
+        return HStack(spacing: 10) {
             Group {
-                if row.rawValue < step.rawValue {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.primary)
-                } else if row == step {
-                    ProgressView().controlSize(.small)
-                } else if let symbol {
-                    Image(systemName: symbol).foregroundStyle(.tertiary)
+                if done {
+                    Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+                        .frame(width: 18, height: 18).background(.primary.opacity(0.1), in: Circle())
+                } else if current {
+                    ProgressView().controlSize(.small).scaleEffect(0.8)
                 } else {
-                    ACGlyph(active: false, width: 14)
+                    Circle().strokeBorder(.primary.opacity(0.2), lineWidth: 1).frame(width: 14, height: 14)
                 }
             }
             .frame(width: 18, height: 18)
-            Text(title).font(.callout).foregroundStyle(row.rawValue <= step.rawValue ? .primary : .secondary)
+            Text(title).font(.callout).foregroundStyle(done || current ? .primary : .secondary)
+            Spacer()
         }
+        .frame(height: 38)
         .accessibilityElement(children: .combine)
+        .accessibilityValue(done ? "Done" : current ? "In progress" : "Waiting")
     }
 }
 
@@ -334,15 +349,18 @@ private struct DeviceCard: View {
     @State private var showControls = false
     let device: AirConditioner
     let pending: Bool
+    let unconfirmed: Bool
     let busy: Bool
     let send: (ACCommand) -> Void
     private var enabled: Bool { device.isOnline && device.isSupported && !pending && !busy }
-    private var active: Bool { device.isOnline && device.statusMessage == nil && device.power }
+    /// Requested power state shown immediately while the cloud confirms it.
+    @State private var requestedPower: Bool?
+    private var shownPower: Bool { requestedPower ?? device.power }
+    private var active: Bool { device.isOnline && device.statusMessage == nil && shownPower }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                ACGlyph(active: active)
                 VStack(alignment: .leading, spacing: 1) {
                     Text(device.name).font(.system(size: 13, weight: .semibold)).lineLimit(1)
                     Text(statusText).font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -350,37 +368,25 @@ private struct DeviceCard: View {
                 Spacer(minLength: 4)
                 powerButton
             }
+            ACHero(running: active, speed: airflowSpeed, swinging: device.airflow(.vertical) == .swing,
+                   readout: device.targetTemperature.map { String(format: "%.0f", $0) }, mode: device.mode)
             if device.isSupported, let target = device.targetTemperature {
-                HStack(alignment: .center) {
-                    HStack(alignment: .firstTextBaseline, spacing: 2) {
-                        Text("\(target, specifier: "%.0f")")
-                            .font(.system(size: 34, weight: .light)).monospacedDigit()
-                            .contentTransition(.numericText(value: target))
-                        Text("°C").font(.system(size: 15)).foregroundStyle(.secondary)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Target \(target, specifier: "%.0f") degrees")
-                    Spacer()
-                    HStack(spacing: 8) {
-                        stepButton("minus", label: "Lower temperature", value: target - 1)
-                        stepButton("plus", label: "Raise temperature", value: target + 1)
-                    }
-                }
-                .opacity(device.power ? 1 : 0.4)
+                temperatureControl(target)
             } else if let message = unsupportedMessage {
                 Label(message, systemImage: "info.circle").font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if (device.isSupported && device.hasExtraControls) || (device.isSupported && device.isOnline) {
+            if device.isSupported && device.hasExtraControls {
+                controlTiles
+            }
+            if device.isSupported && (device.hasExtraControls || device.isOnline) {
                 VStack(alignment: .leading, spacing: 0) {
-                    if device.isSupported && device.hasExtraControls {
-                        sectionHeader("Controls", summary: showControls ? nil : controlsSummary, expanded: showControls) {
-                            showControls.toggle()
-                        }
-                        if showControls { extraControls.padding(.bottom, 10).transition(.opacity) }
+                    if device.isSupported && hasMoreControls {
+                        sectionHeader("More", summary: nil, expanded: showControls) { showControls.toggle() }
+                        if showControls { moreControls.padding(.bottom, 10).transition(.opacity) }
                     }
                     if device.isSupported && device.isOnline {
-                        if device.hasExtraControls { Divider() }
+                        if hasMoreControls { Divider() }
                         sectionHeader("Electricity", summary: showEnergy ? nil : energySummary, expanded: showEnergy) {
                             showEnergy.toggle()
                             if showEnergy, energyStore.energyReports[device.id] == nil {
@@ -397,6 +403,63 @@ private struct DeviceCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 12))
         .animation(.snappy, value: device.targetTemperature)
+    }
+
+    @State private var draftTemperature: Double?
+
+    private var airflowSpeed: Double {
+        switch device.fanSpeed {
+        case .quiet, .low, .speed1: return 0.6
+        case .mediumLow: return 0.8
+        case .mediumHigh, .high: return 1.3
+        case .turbo: return 1.7
+        default: return 1
+        }
+    }
+
+    private func temperatureControl(_ target: Double) -> some View {
+        let shown = draftTemperature ?? target
+        let canAdjust = enabled && device.power
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text("\(shown, specifier: "%.0f")")
+                    .font(.system(size: 40, weight: .light)).monospacedDigit()
+                    .contentTransition(.numericText(value: shown))
+                Text("°C").font(.system(size: 16)).foregroundStyle(.secondary)
+                Spacer()
+                if let room = device.currentTemperature {
+                    Label("\(room.formatted(.number.precision(.fractionLength(0))))°C", systemImage: "thermometer.medium")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .help("Indoor temperature")
+                }
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Target \(shown, specifier: "%.0f") degrees")
+            HStack(spacing: 10) {
+                stepButton("minus", label: "Lower temperature", value: target - 1)
+                VStack(spacing: 2) {
+                    Slider(value: Binding(get: { shown }, set: { draftTemperature = $0.rounded() }),
+                           in: device.minTemperature...device.maxTemperature, step: 1) { editing in
+                        if !editing, let value = draftTemperature {
+                            if value != target { send(.temperature(value)) }
+                            draftTemperature = nil
+                        }
+                    }
+                    .controlSize(.small)
+                    .tint(.primary)
+                    .accessibilityLabel("Target temperature for \(device.name)")
+                    HStack {
+                        Text("\(device.minTemperature, specifier: "%.0f")°")
+                        Spacer()
+                        Text("\(device.maxTemperature, specifier: "%.0f")°")
+                    }
+                    .font(.caption2).foregroundStyle(.tertiary)
+                }
+                stepButton("plus", label: "Raise temperature", value: target + 1)
+            }
+            .disabled(!canAdjust)
+        }
+        .opacity(device.power ? 1 : 0.4)
     }
 
     private func sectionHeader(_ title: String, summary: String?, expanded: Bool, toggle: @escaping () -> Void) -> some View {
@@ -476,6 +539,7 @@ private struct DeviceCard: View {
 
     private var statusText: String {
         guard device.isOnline else { return "Offline" }
+        if unconfirmed { return "Not confirmed yet · refresh to check" }
         guard device.statusMessage == nil else { return "State unavailable" }
         let power = device.power ? "On" : "Off"
         guard let room = device.currentTemperature else { return power }
@@ -484,86 +548,66 @@ private struct DeviceCard: View {
 
     private var controlsEnabled: Bool { enabled && device.power }
 
-    private var controlsSummary: String? {
-        let parts = [device.mode?.title, device.fanSpeed.map { "Fan \($0.title)" }].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    private var hasMoreControls: Bool {
+        device.supportsAirflow(.horizontal) || ACFeature.allCases.contains { device.feature($0) != nil }
     }
 
-    private var extraControls: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if !device.power {
-                Label("Turn on the AC to change these settings.", systemImage: "info.circle")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Group {
-                if !device.modes.isEmpty { modeTiles }
-                settingsGroup {
-                    if !device.fanSpeeds.isEmpty {
-                        settingRow("Fan", "fan") {
-                            optionMenu(device.fanSpeed?.title ?? "Custom",
-                                       selection: Binding<ACFanSpeed?>(get: { device.fanSpeed }, set: { if let value = $0 { send(.fan(value)) } })) {
-                                ForEach(device.fanSpeeds) { Text($0.title).tag(Optional($0)) }
-                            }
-                        }
-                        .disabled(device.mode == .dry)
-                    }
-                    ForEach(ACAxis.allCases) { axis in
-                        if device.supportsAirflow(axis) {
-                            settingRow(axis.title, axis == .vertical ? "arrow.up.and.down" : "arrow.left.and.right") {
-                                optionMenu(device.airflow(axis)?.title(for: axis) ?? "Custom",
-                                           selection: Binding<ACAirflow?>(get: { device.airflow(axis) }, set: { if let value = $0 { send(.airflow(axis, value)) } })) {
-                                    ForEach(ACAirflow.allCases) { Text($0.title(for: axis)).tag(Optional($0)) }
-                                }
-                            }
-                        }
-                    }
-                    if let sleep = device.sleep {
-                        settingRow("Sleep", "moon.zzz") {
-                            optionMenu(sleep.title,
-                                       selection: Binding<ACSleep?>(get: { device.sleep }, set: { if let value = $0 { send(.sleep(value)) } })) {
-                                ForEach(ACSleep.allCases) { Text($0.title).tag(Optional($0)) }
-                            }
-                        }
-                        .disabled(device.mode != .cool && device.mode != .heat && sleep == .off)
-                    }
-                }
-                settingsGroup {
-                    ForEach(ACFeature.allCases) { option in
-                        if let value = device.feature(option) {
-                            settingRow(option.title, option.symbol) {
-                                Toggle(option.title, isOn: Binding(get: { value }, set: { send(.feature(option, $0)) }))
-                                    .labelsHidden().toggleStyle(.switch).controlSize(.mini)
-                            }
-                            .disabled(option == .eco && !value && device.mode != .cool)
-                        }
-                    }
-                }
-            }
-            .disabled(!controlsEnabled)
-            .opacity(controlsEnabled ? 1 : 0.45)
-        }
-    }
-
-    private var modeTiles: some View {
+    /// Mode, fan, sleep and up/down airflow as four compact menu tiles.
+    private var controlTiles: some View {
         HStack(spacing: 6) {
-            ForEach(device.modes) { mode in
-                let selected = device.mode == mode
-                Button { if !selected { send(.mode(mode)) } } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: mode.symbol).font(.system(size: 13))
-                        Text(mode.title).font(.caption2)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 42)
-                    .foregroundStyle(selected ? AnyShapeStyle(.background) : AnyShapeStyle(.primary))
-                    .background(selected ? AnyShapeStyle(.primary) : AnyShapeStyle(.primary.opacity(0.06)), in: RoundedRectangle(cornerRadius: 8))
-                    .contentShape(RoundedRectangle(cornerRadius: 8))
+            if !device.modes.isEmpty {
+                ControlTile(title: "Mode", value: device.mode?.title ?? "—", symbol: device.mode?.symbol ?? "a.circle",
+                            selection: Binding<ACMode?>(get: { device.mode }, set: { if let value = $0, value != device.mode { send(.mode(value)) } })) {
+                    ForEach(device.modes) { Label($0.title, systemImage: $0.symbol).tag(Optional($0)) }
                 }
-                .buttonStyle(.plain)
-                .help("\(mode.title) mode")
-                .accessibilityLabel("\(mode.title) mode")
-                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+            if !device.fanSpeeds.isEmpty {
+                ControlTile(title: "Fan", value: device.fanSpeed?.title ?? "Custom", symbol: "fan",
+                            selection: Binding<ACFanSpeed?>(get: { device.fanSpeed }, set: { if let value = $0 { send(.fan(value)) } })) {
+                    ForEach(device.fanSpeeds) { Text($0.title).tag(Optional($0)) }
+                }
+                .disabled(device.mode == .dry)
+            }
+            if let sleep = device.sleep {
+                ControlTile(title: "Sleep", value: sleep.title, symbol: "moon",
+                            selection: Binding<ACSleep?>(get: { device.sleep }, set: { if let value = $0 { send(.sleep(value)) } })) {
+                    ForEach(ACSleep.allCases) { Text($0.title).tag(Optional($0)) }
+                }
+                .disabled(device.mode != .cool && device.mode != .heat && sleep == .off)
+            }
+            if device.supportsAirflow(.vertical) {
+                ControlTile(title: "Airflow", value: device.airflow(.vertical)?.title(for: .vertical) ?? "Custom", symbol: "wind",
+                            selection: Binding<ACAirflow?>(get: { device.airflow(.vertical) }, set: { if let value = $0 { send(.airflow(.vertical, value)) } })) {
+                    ForEach(ACAirflow.allCases) { Text($0.title(for: .vertical)).tag(Optional($0)) }
+                }
             }
         }
+        .disabled(!controlsEnabled)
+        .opacity(controlsEnabled ? 1 : 0.4)
+    }
+
+    private var moreControls: some View {
+        settingsGroup {
+            if device.supportsAirflow(.horizontal) {
+                settingRow(ACAxis.horizontal.title, "arrow.left.and.right") {
+                    optionMenu(device.airflow(.horizontal)?.title(for: .horizontal) ?? "Custom",
+                               selection: Binding<ACAirflow?>(get: { device.airflow(.horizontal) }, set: { if let value = $0 { send(.airflow(.horizontal, value)) } })) {
+                        ForEach(ACAirflow.allCases) { Text($0.title(for: .horizontal)).tag(Optional($0)) }
+                    }
+                }
+            }
+            ForEach(ACFeature.allCases) { option in
+                if let value = device.feature(option) {
+                    settingRow(option.title, option.symbol) {
+                        Toggle(option.title, isOn: Binding(get: { value }, set: { send(.feature(option, $0)) }))
+                            .labelsHidden().toggleStyle(.switch).controlSize(.mini)
+                    }
+                    .disabled(option == .eco && !value && device.mode != .cool)
+                }
+            }
+        }
+        .disabled(!controlsEnabled)
+        .opacity(controlsEnabled ? 1 : 0.4)
     }
 
     private func settingsGroup<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
@@ -603,21 +647,24 @@ private struct DeviceCard: View {
         return "This unit doesn't report a target temperature."
     }
 
-    @ViewBuilder private var powerButton: some View {
-        if pending {
-            ProgressView().controlSize(.small).frame(width: 30, height: 30)
-        } else {
-            Button { send(.power(!device.power)) } label: {
-                Image(systemName: "power").font(.system(size: 12, weight: .semibold))
-                    .frame(width: 30, height: 30)
-                    .foregroundStyle(active ? AnyShapeStyle(.background) : AnyShapeStyle(.secondary))
-                    .background(active ? AnyShapeStyle(.primary) : AnyShapeStyle(.primary.opacity(0.08)), in: Circle())
-            }
-            .buttonStyle(.plain).disabled(!enabled)
-            .opacity(enabled ? 1 : 0.5)
-            .help(device.power ? "Turn Off" : "Turn On")
-            .accessibilityLabel(device.power ? "Turn off \(device.name)" : "Turn on \(device.name)")
+    private var powerButton: some View {
+        Button {
+            requestedPower = !shownPower
+            send(.power(!device.power))
+        } label: {
+            Image(systemName: "power").font(.system(size: 12, weight: .semibold))
+                .frame(width: 30, height: 30)
+                .foregroundStyle(active ? AnyShapeStyle(.background) : AnyShapeStyle(.secondary))
+                .background(active ? AnyShapeStyle(.primary) : AnyShapeStyle(.primary.opacity(0.08)), in: Circle())
+                .overlay { if pending { PendingRing() } }
+                .animation(.snappy, value: active)
         }
+        .buttonStyle(.plain).disabled(!enabled)
+        .opacity(enabled || pending ? 1 : 0.5)
+        .help(pending ? "Waiting for the AC to confirm" : shownPower ? "Turn Off" : "Turn On")
+        .accessibilityLabel(shownPower ? "Turn off \(device.name)" : "Turn on \(device.name)")
+        .accessibilityValue(pending ? "Updating" : "")
+        .onChange(of: pending) { _, isPending in if !isPending { requestedPower = nil } }
     }
 
     private func stepButton(_ symbol: String, label: String, value: Double) -> some View {
@@ -709,5 +756,278 @@ private struct EnergyChart: View {
         }
         .frame(height: 64)
         .animation(.snappy, value: report.fetchedAt)
+    }
+}
+
+
+/// Equal-width unit picker shown when the account has more than one AC.
+private struct DeviceSwitcher: View {
+    let devices: [AirConditioner]
+    @Binding var selection: String
+
+    var body: some View {
+        let current = devices.first { $0.id == selection }?.id ?? devices.first?.id
+        HStack(spacing: 2) {
+            ForEach(devices) { device in
+                let selected = device.id == current
+                Button { selection = device.id } label: {
+                    HStack(spacing: 5) {
+                        Circle().fill(device.isOnline && device.power ? Color.primary : Color.secondary.opacity(0.35))
+                            .frame(width: 5, height: 5)
+                        Text(device.name.replacingOccurrences(of: "Split ", with: "")).lineLimit(1)
+                    }
+                    .font(.system(size: 12, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? .primary : .secondary)
+                    .frame(maxWidth: .infinity, minHeight: 26)
+                    .background(selected ? Color.primary.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 7))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help(device.name)
+                .accessibilityLabel(device.name)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 9))
+    }
+}
+
+/// A compact tile that opens a native menu of options.
+private struct ControlTile<Value: Hashable, Options: View>: View {
+    let title: String
+    let value: String
+    let symbol: String
+    @Binding var selection: Value
+    @ViewBuilder let options: () -> Options
+
+    var body: some View {
+        Menu {
+            Picker(title, selection: $selection) { options() }.pickerStyle(.inline).labelsHidden()
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: symbol).font(.system(size: 14))
+                    Spacer()
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(.tertiary)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title).font(.caption2).foregroundStyle(.secondary)
+                    Text(value).font(.system(size: 12, weight: .medium)).lineLimit(1).minimumScaleFactor(0.8)
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .menuStyle(.button).menuIndicator(.hidden).buttonStyle(.plain)
+        .accessibilityLabel("\(title): \(value)")
+    }
+}
+
+/// Thin arc that orbits the power button while a command is in flight.
+private struct PendingRing: View {
+    @State private var spin = false
+    var body: some View {
+        Circle().trim(from: 0, to: 0.3)
+            .stroke(.primary.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            .padding(-4)
+            .rotationEffect(.degrees(spin ? 360 : 0))
+            .onAppear { withAnimation(.linear(duration: 0.9).repeatForever(autoreverses: false)) { spin = true } }
+    }
+}
+
+/// Vector indoor unit with a louver, display and airflow. Powering on opens the louver,
+/// lights the display and builds the airflow over about a second; powering off reverses it.
+/// The airflow follows the mode: cool particles, wavy warm air, slower dry air.
+private struct ACHero: View {
+    let running: Bool
+    var speed: Double = 1
+    var swinging: Bool = false
+    var readout: String?
+    var mode: ACMode?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var changedAt = Date.distantPast
+    @State private var transitioning = false
+
+    private static let ramp = 1.1
+    private static let streams = 11
+    private static let wispsPerStream = 3
+
+    var body: some View {
+        TimelineView(.animation(paused: reduceMotion || (!running && !transitioning))) { context in
+            Canvas { canvas, size in draw(&canvas, size: size, now: context.date) } symbols: {
+                Image(systemName: mode?.symbol ?? "a.circle")
+                    .font(.system(size: 7.5, weight: .semibold))
+                    .foregroundStyle(Color.primary)
+                    .tag("mode")
+            }
+        }
+        .frame(height: 140)
+        .frame(maxWidth: .infinity)
+        .accessibilityHidden(true)
+        .onChange(of: running) { _, _ in
+            changedAt = .now
+            transitioning = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.ramp + 0.1) { transitioning = false }
+        }
+    }
+
+    private func draw(_ canvas: inout GraphicsContext, size: CGSize, now: Date) {
+        let raw = reduceMotion ? 1 : min(1, now.timeIntervalSince(changedAt) / Self.ramp)
+        let eased = raw < 0.5 ? 2 * raw * raw : 1 - pow(-2 * raw + 2, 2) / 2
+        let level = running ? eased : 1 - eased            // 0 = off, 1 = fully running
+        let time = reduceMotion ? 0.6 : now.timeIntervalSinceReferenceDate
+        let ink = Color.primary
+        let dark = colorScheme == .dark
+        let recess = Color.black.opacity(dark ? 0.42 : 0.16)
+
+        let width = min(size.width * 0.64, 236), height: CGFloat = 68
+        let unit = CGRect(x: (size.width - width) / 2, y: 4, width: width, height: height)
+        let shell = Path(roundedRect: unit, cornerRadius: 6, style: .continuous)
+        let seamY = unit.maxY - 24
+
+        // Body: vertical shading, a darker lower panel below the seam, and a soft diagonal gloss.
+        canvas.fill(shell, with: .linearGradient(Gradient(colors: [ink.opacity(0.12), ink.opacity(0.04)]),
+                                                 startPoint: CGPoint(x: unit.midX, y: unit.minY), endPoint: CGPoint(x: unit.midX, y: unit.maxY)))
+        canvas.drawLayer { layer in
+            layer.clip(to: shell)
+            layer.fill(Path(CGRect(x: unit.minX, y: seamY, width: width, height: unit.maxY - seamY)), with: .color(.black.opacity(dark ? 0.12 : 0.04)))
+            var gloss = Path()
+            gloss.move(to: CGPoint(x: unit.minX + width * 0.08, y: unit.minY))
+            gloss.addLine(to: CGPoint(x: unit.minX + width * 0.30, y: unit.minY))
+            gloss.addLine(to: CGPoint(x: unit.minX + width * 0.18, y: seamY))
+            gloss.addLine(to: CGPoint(x: unit.minX - width * 0.04, y: seamY))
+            gloss.closeSubpath()
+            layer.drawLayer { soft in
+                soft.addFilter(.blur(radius: 6))
+                soft.fill(gloss, with: .linearGradient(Gradient(colors: [ink.opacity(0.06), ink.opacity(0)]),
+                                                       startPoint: CGPoint(x: unit.minX, y: unit.minY), endPoint: CGPoint(x: unit.minX + width * 0.3, y: seamY)))
+            }
+            var seam = Path()
+            seam.move(to: CGPoint(x: unit.minX, y: seamY))
+            seam.addLine(to: CGPoint(x: unit.maxX, y: seamY))
+            layer.stroke(seam, with: .color(ink.opacity(0.10)), lineWidth: 1)
+        }
+        canvas.stroke(shell, with: .color(ink.opacity(0.22 + 0.22 * level)), lineWidth: 1)
+        var highlight = Path()
+        highlight.move(to: CGPoint(x: unit.minX + 7, y: unit.minY + 1.5))
+        highlight.addLine(to: CGPoint(x: unit.maxX - 7, y: unit.minY + 1.5))
+        canvas.stroke(highlight, with: .color(ink.opacity(0.14)), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+
+        // Display window: mode icon and target temperature, lit while running.
+        let display = CGRect(x: unit.maxX - 60, y: unit.minY + 14, width: 42, height: 16)
+        canvas.fill(Path(roundedRect: display, cornerRadius: 4, style: .continuous), with: .color(recess.opacity(0.6 + 0.4 * level)))
+        var lit = canvas
+        lit.opacity = 0.9 * level                          // blank when off
+        if let symbol = canvas.resolveSymbol(id: "mode") { lit.draw(symbol, at: CGPoint(x: display.minX + 10.5, y: display.midY)) }
+        if let readout {
+            lit.draw(Text(readout).font(.system(size: 9.5, weight: .semibold).monospacedDigit()).foregroundStyle(ink),
+                     at: CGPoint(x: display.maxX - 13.5, y: display.midY))
+        }
+
+        // Outlet and louver. Closed, the flap sits flush over the outlet; opening, it swings down,
+        // uncovering the dark outlet and its vertical fins.
+        let outlet = CGRect(x: unit.minX + 16, y: seamY + 6, width: width - 32, height: 11)
+        let left = outlet.minX, right = outlet.maxX
+        let flapTop = outlet.minY + outlet.height * level          // hinge line slides down as the flap opens
+        let flapBottom = outlet.maxY + 10 * level                  // free edge swings below the unit
+        let bow = 2.5 * level
+
+        if level > 0.01 {
+            let opening = CGRect(x: left, y: outlet.minY, width: outlet.width, height: flapTop - outlet.minY)
+            canvas.fill(Path(roundedRect: opening, cornerRadius: 1.5), with: .color(recess.opacity(0.9)))
+            // Fins: evenly spaced vertical vanes inside the outlet.
+            var fins = Path()
+            var x = left + 8
+            while x < right - 6 {
+                fins.move(to: CGPoint(x: x, y: opening.minY + 1.5))
+                fins.addLine(to: CGPoint(x: x, y: opening.maxY - 0.5))
+                x += 9
+            }
+            canvas.stroke(fins, with: .color(ink.opacity(0.16 * level)), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+        }
+
+        var flap = Path()
+        flap.move(to: CGPoint(x: left, y: flapTop))
+        flap.addLine(to: CGPoint(x: right, y: flapTop))
+        flap.addLine(to: CGPoint(x: right, y: flapBottom))
+        flap.addQuadCurve(to: CGPoint(x: left, y: flapBottom), control: CGPoint(x: (left + right) / 2, y: flapBottom + bow))
+        flap.closeSubpath()
+        canvas.fill(flap, with: .linearGradient(Gradient(colors: [ink.opacity(0.09), ink.opacity(0.05 + 0.06 * level)]),
+                                                startPoint: CGPoint(x: 0, y: flapTop), endPoint: CGPoint(x: 0, y: flapBottom)))
+        if level < 0.99 {
+            // Closed seam around the flap, fading out as it opens.
+            canvas.stroke(Path(roundedRect: CGRect(x: left, y: flapTop, width: right - left, height: max(flapBottom - flapTop, 1)), cornerRadius: 1.5),
+                          with: .color(ink.opacity(0.14 * (1 - level))), lineWidth: 1)
+        }
+        var lip = Path()
+        lip.move(to: CGPoint(x: right, y: flapBottom))
+        lip.addQuadCurve(to: CGPoint(x: left, y: flapBottom), control: CGPoint(x: (left + right) / 2, y: flapBottom + bow))
+        canvas.stroke(lip, with: .color(ink.opacity(0.15 + 0.5 * level)), style: StrokeStyle(lineWidth: 1.2, lineCap: .round))
+
+        guard level > 0.01 else { return }
+        let top = flapBottom + bow + 2, depth = size.height - top - 2
+        let sweep = swinging ? sin(time * 0.7) * 0.35 : 0.1
+        let pace = speed * (mode == .dry ? 0.6 : 1)
+        let waviness: Double = mode == .heat ? 7 : 3.5
+        let strength: Double = mode == .dry ? 0.7 : mode == .fan ? 0.85 : 1
+
+        // Soft glow of moving air beneath the vent.
+        var cone = Path()
+        cone.move(to: CGPoint(x: left + 4, y: top))
+        cone.addLine(to: CGPoint(x: right - 4, y: top))
+        cone.addLine(to: CGPoint(x: unit.midX + width * 0.64 + sweep * depth * 1.4, y: top + depth))
+        cone.addLine(to: CGPoint(x: unit.midX - width * 0.64 + sweep * depth * 1.4, y: top + depth))
+        cone.closeSubpath()
+        canvas.drawLayer { glow in
+            glow.addFilter(.blur(radius: 12))
+            glow.fill(cone, with: .linearGradient(Gradient(colors: [ink.opacity(0.10 * level * strength), ink.opacity(0)]),
+                                                  startPoint: CGPoint(x: unit.midX, y: top), endPoint: CGPoint(x: unit.midX, y: top + depth * 0.9)))
+        }
+
+        func point(_ t: Double, _ p: Double, _ seed: Double) -> CGPoint {
+            let spread = t * (width / 2 - 22) + t * (p * 0.6 + p * p * 0.4) * width * 0.32
+            let lean = sweep * p * depth * 1.4
+            let sway = sin(time * (mode == .heat ? 2.6 : 1.6) + seed * 2.3 + p * (mode == .heat ? 7 : 4)) * waviness * p
+            return CGPoint(x: unit.midX + spread + lean + sway, y: top + p * depth)
+        }
+        let reach = 0.35 + 0.65 * level                       // airflow extends further as it builds
+        canvas.drawLayer { air in
+        air.addFilter(.blur(radius: 0.7))
+        for stream in 0..<Self.streams {
+            let t = Double(stream) / Double(Self.streams - 1) * 2 - 1
+            for wisp in 0..<Self.wispsPerStream {
+                let seed = Double(stream * 7 + wisp * 13)
+                let rate = 0.42 * pace * (0.85 + 0.3 * (sin(seed) * 0.5 + 0.5))
+                let cycle = (time * rate + Double(wisp) / Double(Self.wispsPerStream) + sin(seed * 1.7) * 0.5)
+                    .truncatingRemainder(dividingBy: 1)
+                let head = cycle * reach, tail = max(0, head - 0.34 * reach)
+                guard head > 0.02 else { continue }
+                var path = Path()
+                path.move(to: point(t, tail, seed))
+                for step in 1...10 { path.addLine(to: point(t, tail + (head - tail) * Double(step) / 10, seed)) }
+                let alpha = sin(.pi * cycle) * (0.42 - abs(t) * 0.12) * level * strength
+                air.stroke(path, with: .linearGradient(Gradient(colors: [ink.opacity(0), ink.opacity(alpha), ink.opacity(alpha * 0.6)]),
+                                                       startPoint: point(t, tail, seed), endPoint: point(t, head, seed)),
+                           style: StrokeStyle(lineWidth: 1.8, lineCap: .round, lineJoin: .round))
+            }
+            // Cool air: small particles drifting between the wisps.
+            if mode == .cool && stream % 2 == 1 {
+                for particle in 0..<2 {
+                    let seed = Double(stream * 11 + particle * 5 + 3)
+                    let cycle = (time * 0.3 * pace * (0.8 + 0.4 * (sin(seed) * 0.5 + 0.5)) + Double(particle) * 0.5 + cos(seed) * 0.3)
+                        .truncatingRemainder(dividingBy: 1)
+                    let p = cycle * reach
+                    let center = point(t + sin(seed) * 0.08, p, seed + 1)
+                    let radius = 0.8 + 0.6 * (cos(seed * 2.1) * 0.5 + 0.5)
+                    air.fill(Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)),
+                             with: .color(ink.opacity(sin(.pi * cycle) * 0.5 * level)))
+                }
+            }
+        }
+        }
     }
 }

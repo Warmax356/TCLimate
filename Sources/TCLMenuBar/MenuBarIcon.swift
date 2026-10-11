@@ -35,3 +35,19 @@ enum MenuBarIcon {
         return image
     }
 }
+
+/// The app's snowflake in a soft rounded tile, used as the logo on sign-in.
+struct BrandMark: View {
+    let size: CGFloat
+
+    var body: some View {
+        let glyph = size * 0.6
+        Image(nsImage: MenuBarIcon.snowflake(size: glyph, lineWidth: max(1.25, glyph * 0.055)))
+            .renderingMode(.template)
+            .foregroundStyle(.primary)
+            .frame(width: size, height: size)
+            .background(.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: size * 0.26, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: size * 0.26, style: .continuous).strokeBorder(.primary.opacity(0.08)))
+            .accessibilityHidden(true)
+    }
+}
