@@ -31,6 +31,8 @@ The notarization script stops unless Apple returns `Accepted`. It staples and va
 
 ## Publish the public beta
 
+The public beta uses a regular GitHub release marked Latest so it appears in the repository sidebar. Keep “Public Beta” in the title and notes; GitHub prereleases cannot be selected as Latest.
+
 Only after notarization succeeds and the source commit is pushed:
 
 ```sh
@@ -39,7 +41,7 @@ git push origin v0.1.0
 gh release create v0.1.0 \
   dist/releases/v0.1.0/TCLimate-v0.1.0-universal.zip \
   dist/releases/v0.1.0/SHA256SUMS \
-  --repo umarz317/TCLimate --verify-tag --prerelease --latest=false \
+  --repo umarz317/TCLimate --verify-tag --latest \
   --title "v0.1.0 — Public Beta" --notes-file Docs/Releases/v0.1.0.md
 ```
 
