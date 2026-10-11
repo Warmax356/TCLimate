@@ -21,7 +21,7 @@ xcrun stapler validate "$TCL_APP"
 spctl --assess --type execute --verbose=2 "$TCL_APP"
 # Release tooling only; dmgbuild and uv are not app runtime dependencies.
 uvx --from dmgbuild==1.6.7 dmgbuild -s Scripts/dmg-settings.py \
-  -D "app=$TCL_APP" "TCLimate" "$TCL_RELEASE_DIR/$TCL_DMG"
+  -D "app=$TCL_APP" -D "notices=$PWD/THIRD_PARTY_NOTICES.md" "TCLimate" "$TCL_RELEASE_DIR/$TCL_DMG"
 # Check the copied app: Finder metadata must not invalidate its signature.
 TCL_DMG_MOUNT="$(mktemp -d "$PWD/dist/dmg-verify.XXXXXX")"
 function tcl_dmg_cleanup() {

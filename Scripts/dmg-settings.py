@@ -2,7 +2,7 @@
 import os
 
 application = defines["app"]
-files = [application]
+files = [application, (defines["notices"], ".THIRD_PARTY_NOTICES.md")]
 symlinks = {"Applications": "/Applications"}
 icon = os.path.join(application, "Contents", "Resources", "AppIcon.icns")
 icon_locations = {"TCLimate.app": (140, 120), "Applications": (500, 120)}
