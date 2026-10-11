@@ -18,7 +18,7 @@ TCLimate is an unofficial, native SwiftUI companion for TCL Home. Check room tem
 
 ## Features
 
-- **Every AC in one panel.** A compact menu bar dropdown with one card per unit.
+- **Every AC in one panel.** A compact menu bar dropdown with a unit switcher and focused controls for the selected AC.
 - **Quick control.** Power, target temperature (16–30 °C) and the reported indoor temperature.
 - **Full controls when supported.** Auto, Cool, Dry, Fan and Heat modes; fan speed; vertical and horizontal airflow; Eco; sleep; display light; beep.
 - **Electricity at a glance.** Today, yesterday and 7-day kWh, plus a 7-day bar chart. A missing reading is shown as a gap, never as a fake zero.
@@ -33,7 +33,11 @@ TCLimate is an unofficial, native SwiftUI companion for TCL Home. Check room tem
 
 ## Public beta
 
-**v0.1.0 Public Beta** targets macOS 14+ on Apple silicon and Intel. See [GitHub Releases](https://github.com/umarz317/TCLimate/releases) for published builds and [beta release notes](Docs/Releases/v0.1.0.md) for features and limitations. The notarized archive is pending Apple credential setup; no notarized download is available yet.
+**v0.1.0 Public Beta** is available for macOS 14+ on Apple silicon and Intel. The universal app is Developer ID–signed, notarized by Apple, and includes a stapled notarization ticket.
+
+[Download TCLimate v0.1.0](https://github.com/umarz317/TCLimate/releases/download/v0.1.0/TCLimate-v0.1.0-universal.zip) · [Release notes and checksums](https://github.com/umarz317/TCLimate/releases/tag/v0.1.0)
+
+Unzip the download, move **TCLimate.app** to **Applications**, then open it. Click the snowflake in the menu bar to sign in. Enable Launch at Login after the app is in its final location.
 
 ## Build and install
 
@@ -68,7 +72,8 @@ ACs linked to the account appear automatically. Pair new units in the official T
 
 ## Using the panel
 
-- **Card header:** the unit name, its power state and indoor temperature, and a power button.
+- **Unit switcher:** choose an AC when multiple units are linked.
+- **Selected unit:** its power state, indoor temperature, and a power button.
 - **Temperature:** − and + adjust the target in 1 °C steps while the unit is on.
 - **Controls:** mode, fan, airflow, sleep and feature toggles. When collapsed it shows the current mode and fan speed.
 - **Electricity:** daily kWh for the last 7 days. When collapsed it shows today's total.
