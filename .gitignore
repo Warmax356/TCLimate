@@ -33,3 +33,5 @@ __pycache__/
 
 .release-codesign-identity
 *.p8
+
+*.dmg
