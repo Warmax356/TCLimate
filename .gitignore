@@ -1,0 +1,35 @@
+.DS_Store
+.build/
+dist/
+Artifacts/
+Research/
+*.xcuserstate
+xcuserdata/
+.codesign-identity
+
+# Local agent setup and private configuration
+.agents/
+.claude/
+skills-lock.json
+.env
+.env.*
+*.p12
+*.pfx
+*.key
+
+# Captures, downloaded application packages, and signing material
+*.ipa
+*.apk
+*.xapk
+*.har
+*.pcap
+*.pcapng
+*.mitm
+*.pem
+*.mobileprovision
+*.provisionprofile
+*.log
+__pycache__/
+
+.release-codesign-identity
+*.p8
