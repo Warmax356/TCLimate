@@ -16,6 +16,10 @@
 
 TCLimate is an unofficial, native SwiftUI companion for TCL Home. Check room temperatures, adjust your ACs and track electricity use without reaching for your phone. It has no third-party dependencies, Dock icon or background service.
 
+<div align="center">
+<img src="Docs/Assets/demo.gif" width="480" alt="TCLimate controlling an AC from the macOS menu bar">
+</div>
+
 ## Features
 
 - **Every AC in one panel.** A compact menu bar dropdown with a unit switcher and focused controls for the selected AC.
