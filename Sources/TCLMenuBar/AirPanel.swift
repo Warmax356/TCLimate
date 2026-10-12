@@ -369,17 +369,22 @@ private struct DeviceCard: View {
                 powerButton
             }
             ACHero(running: active, speed: airflowSpeed, swinging: device.airflow(.vertical) == .swing,
-                   readout: device.targetTemperature.map { String(format: "%.0f", $0) }, mode: device.mode)
-            if device.isSupported, let target = device.targetTemperature {
+                   readout: device.isOnline ? device.targetTemperature.map { String(format: "%.0f", $0) } : nil, mode: device.isOnline ? device.mode : nil)
+            if !device.isOnline {
+                // Last-known values would be stale, so show none of them.
+                Label("Offline. Check the unit's power and Wi-Fi.", systemImage: "wifi.slash")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if device.isSupported, let target = device.targetTemperature {
                 temperatureControl(target)
             } else if let message = unsupportedMessage {
                 Label(message, systemImage: "info.circle").font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            if device.isSupported && device.hasExtraControls {
+            if device.isOnline && device.isSupported && device.hasExtraControls {
                 controlTiles
             }
-            if device.isSupported && (device.hasExtraControls || device.isOnline) {
+            if device.isOnline && device.isSupported {
                 VStack(alignment: .leading, spacing: 0) {
                     if device.isSupported && hasMoreControls {
                         sectionHeader("More", summary: nil, expanded: showControls) { showControls.toggle() }
@@ -427,10 +432,18 @@ private struct DeviceCard: View {
                     .contentTransition(.numericText(value: shown))
                 Text("°C").font(.system(size: 16)).foregroundStyle(.secondary)
                 Spacer()
-                if let room = device.currentTemperature {
-                    Label("\(room.formatted(.number.precision(.fractionLength(0))))°C indoors", systemImage: "thermometer.medium")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .help("Current indoor temperature")
+                if device.currentTemperature != nil || device.outdoorTemperature != nil {
+                    VStack(alignment: .trailing, spacing: 2) {
+                        if let room = device.currentTemperature {
+                            Label("\(room.formatted(.number.precision(.fractionLength(0))))°C indoors", systemImage: "thermometer.medium")
+                                .help("Current indoor temperature")
+                        }
+                        if let outdoor = device.outdoorTemperature {
+                            Label("\(outdoor.formatted(.number.precision(.fractionLength(0))))°C outdoors", systemImage: "sun.max")
+                                .help("Outdoor unit temperature")
+                        }
+                    }
+                    .font(.caption).foregroundStyle(.secondary)
                 }
             }
             .accessibilityElement(children: .combine)
@@ -547,10 +560,10 @@ private struct DeviceCard: View {
     private var controlsEnabled: Bool { enabled && device.power }
 
     private var hasMoreControls: Bool {
-        device.supportsAirflow(.horizontal) || ACFeature.allCases.contains { device.feature($0) != nil }
+        ACFeature.allCases.contains { device.feature($0) != nil }
     }
 
-    /// Mode, fan, sleep and up/down airflow as four compact menu tiles.
+    /// Mode, fan, sleep and airflow (up/down and left/right) as compact menu tiles.
     private var controlTiles: some View {
         HStack(spacing: 6) {
             if !device.modes.isEmpty {
@@ -573,27 +586,17 @@ private struct DeviceCard: View {
                 }
                 .disabled(device.mode != .cool && device.mode != .heat && sleep == .off)
             }
-            if device.supportsAirflow(.vertical) {
-                ControlTile(title: "Airflow", value: device.airflow(.vertical)?.title(for: .vertical) ?? "Custom", symbol: "wind",
-                            selection: Binding<ACAirflow?>(get: { device.airflow(.vertical) }, set: { if let value = $0 { send(.airflow(.vertical, value)) } })) {
-                    ForEach(ACAirflow.allCases) { Text($0.title(for: .vertical)).tag(Optional($0)) }
-                }
+            if ACAxis.allCases.contains(where: device.supportsAirflow) {
+                AirflowTile(device: device, send: send)
             }
         }
+        .fixedSize(horizontal: false, vertical: true)
         .disabled(!controlsEnabled)
         .opacity(controlsEnabled ? 1 : 0.4)
     }
 
     private var moreControls: some View {
         settingsGroup {
-            if device.supportsAirflow(.horizontal) {
-                settingRow(ACAxis.horizontal.title, "arrow.left.and.right") {
-                    optionMenu(device.airflow(.horizontal)?.title(for: .horizontal) ?? "Custom",
-                               selection: Binding<ACAirflow?>(get: { device.airflow(.horizontal) }, set: { if let value = $0 { send(.airflow(.horizontal, value)) } })) {
-                        ForEach(ACAirflow.allCases) { Text($0.title(for: .horizontal)).tag(Optional($0)) }
-                    }
-                }
-            }
             ForEach(ACFeature.allCases) { option in
                 if let value = device.feature(option) {
                     settingRow(option.title, option.symbol) {
@@ -695,6 +698,7 @@ private extension ACFeature {
     var symbol: String {
         switch self {
         case .eco: return "leaf"
+        case .health: return "heart"
         case .display: return "lightbulb"
         case .beep: return "speaker.wave.2"
         }
@@ -772,7 +776,7 @@ private struct DeviceSwitcher: View {
                     HStack(spacing: 5) {
                         Circle().fill(device.isOnline && device.power ? Color.primary : Color.secondary.opacity(0.35))
                             .frame(width: 5, height: 5)
-                        Text(device.name.replacingOccurrences(of: "Split ", with: "")).lineLimit(1)
+                        Text(device.name).lineLimit(1).minimumScaleFactor(0.8)
                     }
                     .font(.system(size: 12, weight: selected ? .semibold : .regular))
                     .foregroundStyle(selected ? .primary : .secondary)
@@ -815,12 +819,58 @@ private struct ControlTile<Value: Hashable, Options: View>: View {
                 }
             }
             .padding(8)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
             .contentShape(RoundedRectangle(cornerRadius: 8))
         }
         .menuStyle(.button).menuIndicator(.hidden).buttonStyle(.plain)
         .accessibilityLabel("\(title): \(value)")
+    }
+}
+
+/// One tile for both swing axes: shows each axis's current setting and offers both in a single menu.
+private struct AirflowTile: View {
+    let device: AirConditioner
+    let send: (ACCommand) -> Void
+    private var axes: [ACAxis] { ACAxis.allCases.filter(device.supportsAirflow) }
+
+    var body: some View {
+        Menu {
+            ForEach(axes) { axis in
+                Section(axis.title) {
+                    Picker(axis.title, selection: Binding<ACAirflow?>(get: { device.airflow(axis) },
+                                                                      set: { if let value = $0 { send(.airflow(axis, value)) } })) {
+                        ForEach(ACAirflow.allCases) { Text($0.title(for: axis)).tag(Optional($0)) }
+                    }
+                    .pickerStyle(.inline).labelsHidden()
+                }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Image(systemName: "wind").font(.system(size: 14))
+                    Spacer()
+                    Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(.tertiary)
+                }
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Airflow").font(.caption2).foregroundStyle(.secondary)
+                    ForEach(axes) { axis in
+                        HStack(spacing: 3) {
+                            Image(systemName: axis == .vertical ? "arrow.up.and.down" : "arrow.left.and.right")
+                                .font(.system(size: 8, weight: .semibold)).foregroundStyle(.secondary)
+                            Text(device.airflow(axis)?.title(for: axis) ?? "Custom")
+                                .font(.system(size: 12, weight: .medium)).lineLimit(1).minimumScaleFactor(0.7)
+                        }
+                    }
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+            .contentShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .menuStyle(.button).menuIndicator(.hidden).buttonStyle(.plain)
+        .accessibilityLabel("Airflow: " + axes.map { "\($0.title) \(device.airflow($0)?.title(for: $0) ?? "custom")" }.joined(separator: ", "))
     }
 }
 

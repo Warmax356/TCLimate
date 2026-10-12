@@ -72,4 +72,23 @@ final class TCLCoreTests: XCTestCase {
         }
     }
 
+
+    func testOutdoorTemperatureIsOptionalAndRangeChecked() throws {
+        func parse(_ reported: [String: Any]) throws -> AirConditioner {
+            try XCTUnwrap(AirConditioner.parse(["deviceId": "ac-9", "deviceName": "Split AC", "isOnline": 1],
+                                               shadow: ["state": ["reported": ["powerSwitch": 1].merging(reported) { $1 }]]))
+        }
+        XCTAssertEqual(try parse(["externalUnitTemperature": 34]).outdoorTemperature, 34)
+        XCTAssertEqual(try parse(["externalUnitTemperature": -3]).outdoorTemperature, -3)
+        XCTAssertNil(try parse([:]).outdoorTemperature)
+        XCTAssertNil(try parse(["externalUnitTemperature": -1]).outdoorTemperature)
+        XCTAssertNil(try parse(["externalUnitTemperature": 255]).outdoorTemperature)
+    }
+
+    func testHealthModeIsAFeatureToggle() throws {
+        let device = try XCTUnwrap(AirConditioner.parse(["deviceId": "ac-h", "deviceName": "Split AC", "isOnline": 1],
+                                                        shadow: ["state": ["reported": ["powerSwitch": 1, "workMode": 1, "healthy": 0]]]))
+        XCTAssertEqual(device.feature(.health), false)
+        XCTAssertEqual(try device.desiredState(for: .feature(.health, true)), ["healthy": 1])
+    }
 }

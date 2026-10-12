@@ -30,10 +30,10 @@ public enum ACFanSpeed: String, CaseIterable, Identifiable {
     }
 }
 public enum ACFeature: String, CaseIterable, Identifiable {
-    case eco = "ECO", display = "screen", beep = "beepSwitch"
+    case eco = "ECO", health = "healthy", display = "screen", beep = "beepSwitch"
     public var id: String { rawValue }
     public var title: String {
-        switch self { case .eco: return "Eco"; case .display: return "Display light"; case .beep: return "Beep" }
+        switch self { case .eco: return "Eco"; case .health: return "Health"; case .display: return "Display light"; case .beep: return "Beep" }
     }
 }
 public enum ACAxis: String, CaseIterable, Identifiable {
@@ -73,6 +73,8 @@ public struct AirConditioner: Identifiable {
     public let power: Bool
     public let targetTemperature: Double?
     public let currentTemperature: Double?
+    /// Outdoor unit sensor, when the model reports one.
+    public let outdoorTemperature: Double?
     public let minTemperature: Double
     public let maxTemperature: Double
     let controls: [String: Int]
@@ -96,6 +98,7 @@ public struct AirConditioner: Identifiable {
             power: number(reported["powerSwitch"]) == 1,
             targetTemperature: temperature(reported["targetTemperature"]),
             currentTemperature: temperature(reported["currentTemperature"]),
+            outdoorTemperature: temperature(reported["externalUnitTemperature"]).flatMap { (-40...80).contains($0) ? $0 : nil },
             minTemperature: 16, maxTemperature: 30,
             controls: supportedFamily ? reported.reduce(into: [String: Int]()) { values, entry in
                 if let n = number(entry.value), n.isFinite, n >= 0, n <= 100, n.rounded() == n { values[entry.key] = Int(n) }
