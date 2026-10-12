@@ -428,9 +428,9 @@ private struct DeviceCard: View {
                 Text("°C").font(.system(size: 16)).foregroundStyle(.secondary)
                 Spacer()
                 if let room = device.currentTemperature {
-                    Label("\(room.formatted(.number.precision(.fractionLength(0))))°C", systemImage: "thermometer.medium")
+                    Label("\(room.formatted(.number.precision(.fractionLength(0))))°C indoors", systemImage: "thermometer.medium")
                         .font(.caption).foregroundStyle(.secondary)
-                        .help("Indoor temperature")
+                        .help("Current indoor temperature")
                 }
             }
             .accessibilityElement(children: .combine)
@@ -541,9 +541,7 @@ private struct DeviceCard: View {
         guard device.isOnline else { return "Offline" }
         if unconfirmed { return "Not confirmed yet · refresh to check" }
         guard device.statusMessage == nil else { return "State unavailable" }
-        let power = device.power ? "On" : "Off"
-        guard let room = device.currentTemperature else { return power }
-        return "\(power) · \(room.formatted(.number.precision(.fractionLength(0))))°C indoors"
+        return device.power ? "On" : "Off"
     }
 
     private var controlsEnabled: Bool { enabled && device.power }
